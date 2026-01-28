@@ -1,506 +1,259 @@
-const EXTENSION_NAME = "Character Library";
-const EXTENSION_DIR = "SillyTavern-CharacterLibrary";
+// CT-ChatLibrary - index.js
+(function () {
+    const EXTENSION_NAME = "CT-ChatLibrary";
+    
+    // UI References
+    const IDs = {
+        CHAR_BLOCK: 'rm_characters_block',
+        TAG_FILTER: 'rm_tag_filter',
+        CHAR_LIST: 'rm_print_characters_block',
+        CHAR_PAGINATION: 'rm_print_characters_pagination',
+        CONTAINER: 'ct_chats_container',
+        LIST: 'ct_chats_list',
+        PAGINATION: 'ct_chats_pagination', // New pagination container
+        TOGGLE_BTN: 'ct_toggle_view_btn',
+        SEARCH: 'ct_chats_search',
+        REFRESH: 'ct_chats_refresh'
+    };
 
-// Helper to get the correct path for this extension
-function getExtensionUrl() {
-    // Try to find the script tag that loaded this extension to get the base path
-    const scripts = document.getElementsByTagName('script');
-    for (let i = 0; i < scripts.length; i++) {
-        if (scripts[i].src && scripts[i].src.includes(EXTENSION_DIR)) {
-            const path = scripts[i].src;
-            // Return the directory containing index.js
-            return path.substring(0, path.lastIndexOf('/'));
+    // State
+    let isChatView = false;
+    let cachedChats = [];
+    let observer = null;
+    
+    const getContext = () => window.SillyTavern.getContext();
+
+    const toggleView = async (e) => {
+        e?.stopPropagation();
+        isChatView = !isChatView;
+        
+        const $toggleBtn = $(`#${IDs.TOGGLE_BTN}`);
+        const $charList = $(`#${IDs.CHAR_LIST}`);
+        const $charPagination = $(`#${IDs.CHAR_PAGINATION}`);
+        const $chatContainer = $(`#${IDs.CONTAINER}`);
+
+        if (isChatView) {
+            $toggleBtn.addClass('ct_active').attr('title', 'Switch to Character View');
+            $charList.addClass('ct_hidden');
+            $charPagination.addClass('ct_hidden');
+            $chatContainer.removeClass('ct_hidden');
+            await loadChats();
+        } else {
+            $toggleBtn.removeClass('ct_active').attr('title', 'Switch to Chat View');
+            $charList.removeClass('ct_hidden');
+            $charPagination.removeClass('ct_hidden');
+            $chatContainer.addClass('ct_hidden');
         }
-    }
-    // Fallback if script tag search fails (e.g. if loaded via eval or blob)
-    return `scripts/extensions/third-party/${EXTENSION_DIR}`;
-}
+    };
 
-function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return '';
-}
-
-async function getCsrfToken() {
-    try {
-        const response = await fetch('/csrf-token');
-        if (response.ok) {
-            const data = await response.json();
-            return data.token;
-        }
-    } catch (e) {
-        console.error('Failed to fetch CSRF token', e);
-    }
-    // Fallback to cookie if fetch fails, though likely undefined if fetch failed
-    return getCookie('X-CSRF-Token');
-}
-
-async function openGallery() {
-    const baseUrl = getExtensionUrl();
-    const token = await getCsrfToken();
-    // Pass token in URL to be safe, though cookies should work cross-tab on same origin
-    const url = `${baseUrl}/gallery.html?csrf=${encodeURIComponent(token)}`;
-    window.open(url, '_blank');
-}
-
-jQuery(async () => {
-    // add a delay to ensure the UI is loaded
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const galleryBtn = $(`
-    <div id="st-gallery-btn" class="interactable" title="Open Character Library" style="cursor: pointer; display: flex; align-items: center; justify-content: center; height: 100%; padding: 0 10px;">
-        <i class="fa-solid fa-photo-film" style="font-size: 1.2em;"></i>
-    </div>
-    `);
-
-    // Event listener
-    galleryBtn.on('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        openGallery();
-    });
-
-    // Injection Strategy: Place after the Character Management panel (rightNavHolder) for better centering
-    // Priority: After character panel drawer, or in top-settings-holder center area
-    let injected = false;
-    
-    // Try to insert after the Character Management drawer (rightNavHolder)
-    const rightNavHolder = $('#rightNavHolder');
-    if (rightNavHolder.length) {
-        rightNavHolder.after(galleryBtn);
-        console.log(`${EXTENSION_NAME}: Added after #rightNavHolder (Character Management)`);
-        injected = true;
-    }
-    
-    // Fallback to other locations
-    if (!injected) {
-        const fallbackTargets = [
-            '#top-settings-holder',   // Settings container
-            '#top-bar',               // Direct top bar
-        ];
-        
-        for (const selector of fallbackTargets) {
-            const target = $(selector);
-            if (target.length) {
-                // Insert in middle of container for better centering
-                const children = target.children();
-                if (children.length > 1) {
-                    // Insert after first half of children
-                    const midPoint = Math.floor(children.length / 2);
-                    $(children[midPoint]).after(galleryBtn);
-                } else {
-                    target.append(galleryBtn);
-                }
-                console.log(`${EXTENSION_NAME}: Added to ${selector}`);
-                injected = true;
-                break;
-            }
-        }
-    }
-    
-    if (!injected) {
-         console.warn(`${EXTENSION_NAME}: Could not find Top Bar. Creating floating button.`);
-         galleryBtn.css({
-             'position': 'fixed',
-             'top': '2px', // Align with top bar
-             'right': '250px', // Move it left of the hamburger/drawer
-             'z-index': '20000',
-             'background': 'rgba(0,0,0,0.5)',
-             'border': '1px solid rgba(255,255,255,0.2)',
-             'padding': '5px',
-             'height': '40px',
-             'width': '40px',
-             'display': 'flex',
-             'align-items': 'center',
-             'justify-content': 'center',
-             'border-radius': '5px'
-         });
-         // Add to body
-         $('body').append(galleryBtn);
-    }
-    
-    // Fallback: Add a slash command
-    if (window.SlashCommandParser) {
-        window.SlashCommandParser.addCommandObject(Interact.SlashCommand.fromProps({
-            name: 'gallery',
-            helpString: 'Open the Character Library',
-            callback: openGallery
-        }));
-    }
-    
-    // ==============================================
-    // Media Localization in SillyTavern Chat
-    // ==============================================
-    
-    // Initialize media localization for chat messages
-    initMediaLocalizationInChat();
-    
-    console.log(`${EXTENSION_NAME}: Loaded successfully.`);
-});
-
-// ==============================================
-// Media Localization Functions for SillyTavern Chat
-// ==============================================
-
-const SETTINGS_KEY = 'SillyTavernCharacterGallery';
-
-// Cache for URL→LocalPath mappings per character avatar
-const chatMediaLocalizationCache = {};
-
-/**
- * Get our extension settings from SillyTavern's context
- */
-function getExtensionSettings() {
-    try {
-        const context = SillyTavern?.getContext?.();
-        if (context?.extensionSettings?.[SETTINGS_KEY]) {
-            return context.extensionSettings[SETTINGS_KEY];
-        }
-    } catch (e) {
-        console.warn('[CharLib] Could not access extension settings:', e);
-    }
-    return {};
-}
-
-/**
- * Check if media localization is enabled for a character
- */
-function isMediaLocalizationEnabledForChat(avatar) {
-    const settings = getExtensionSettings();
-    const globalEnabled = settings.mediaLocalizationEnabled || false;
-    const perCharSettings = settings.mediaLocalizationPerChar || {};
-    
-    // Check per-character override first
-    if (avatar && avatar in perCharSettings) {
-        return perCharSettings[avatar];
-    }
-    
-    return globalEnabled;
-}
-
-/**
- * Sanitize folder name to match SillyTavern's folder naming convention
- */
-function sanitizeFolderName(name) {
-    if (!name) return '';
-    return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim();
-}
-
-/**
- * Sanitize media filename the same way gallery.js does
- */
-function sanitizeMediaFilename(filename) {
-    const nameWithoutExt = filename.includes('.') 
-        ? filename.substring(0, filename.lastIndexOf('.'))
-        : filename;
-    return nameWithoutExt.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
-}
-
-/**
- * Extract filename from URL
- */
-function extractFilenameFromUrl(url) {
-    try {
-        const urlObj = new URL(url);
-        const pathParts = urlObj.pathname.split('/');
-        return pathParts[pathParts.length - 1] || '';
-    } catch (e) {
-        const parts = url.split('/');
-        return parts[parts.length - 1]?.split('?')[0] || '';
-    }
-}
-
-/**
- * Build URL→LocalPath mapping for a character by scanning their gallery folder
- */
-async function buildChatMediaLocalizationMap(characterName, avatar) {
-    // Check cache first
-    if (avatar && chatMediaLocalizationCache[avatar]) {
-        return chatMediaLocalizationCache[avatar];
-    }
-    
-    const urlMap = {};
-    const safeFolderName = sanitizeFolderName(characterName);
-    
-    try {
-        // Get CSRF token properly
-        const csrfToken = await getCsrfToken();
-        
-        // Get list of files in character's gallery
-        const response = await fetch('/api/images/list', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
-            },
-            body: JSON.stringify({ folder: characterName, type: 7 }) // 7 = all media types
-        });
-        
-        if (!response.ok) {
-            return urlMap;
-        }
-        
-        const files = await response.json();
-        if (!files || files.length === 0) {
-            return urlMap;
-        }
-        
-        // Parse localized_media files
-        const localizedPattern = /^localized_media_\d+_(.+)\.[^.]+$/;
-        let localizedCount = 0;
-        
-        for (const file of files) {
-            const fileName = (typeof file === 'string') ? file : file.name;
-            if (!fileName) continue;
-            
-            const match = fileName.match(localizedPattern);
-            if (match) {
-                const sanitizedName = match[1];
-                const localPath = `/user/images/${encodeURIComponent(safeFolderName)}/${encodeURIComponent(fileName)}`;
-                urlMap[`__sanitized__${sanitizedName}`] = localPath;
-                localizedCount++;
-            }
-        }
-        
-        // Cache the mapping
-        if (avatar) {
-            chatMediaLocalizationCache[avatar] = urlMap;
-        }
-        
-        return urlMap;
-        
-    } catch (error) {
-        console.error('[CharLib] Error building localization map:', error);
-        return urlMap;
-    }
-}
-
-/**
- * Look up a remote URL and return local path if found
- */
-function lookupLocalizedMediaForChat(urlMap, remoteUrl) {
-    if (!urlMap || !remoteUrl) return null;
-    
-    const filename = extractFilenameFromUrl(remoteUrl);
-    if (!filename) return null;
-    
-    const sanitizedName = sanitizeMediaFilename(filename);
-    return urlMap[`__sanitized__${sanitizedName}`] || null;
-}
-
-/**
- * Apply media localization to a rendered message element
- */
-async function localizeMediaInMessage(messageElement, character) {
-    if (!character?.avatar || !messageElement) return;
-    
-    // Check if localization is enabled
-    if (!isMediaLocalizationEnabledForChat(character.avatar)) return;
-    
-    const characterName = character.name;
-    const urlMap = await buildChatMediaLocalizationMap(characterName, character.avatar);
-    
-    if (Object.keys(urlMap).length === 0) return; // No localized files
-    
-    // Find all media elements with remote URLs
-    const mediaSelectors = 'img[src^="http"], video source[src^="http"], audio source[src^="http"], video[src^="http"], audio[src^="http"]';
-    const mediaElements = messageElement.querySelectorAll(mediaSelectors);
-    
-    let replacedCount = 0;
-    
-    for (const el of mediaElements) {
-        const src = el.getAttribute('src');
-        if (!src) continue;
-        
-        const localPath = lookupLocalizedMediaForChat(urlMap, src);
-        if (localPath) {
-            el.setAttribute('src', localPath);
-            replacedCount++;
-        }
-    }
-}
-
-/**
- * Initialize media localization hooks for SillyTavern chat
- */
-function initMediaLocalizationInChat() {
-    try {
-        // Check if SillyTavern global is available
-        if (typeof SillyTavern === 'undefined') {
-            setTimeout(initMediaLocalizationInChat, 1000);
-            return;
-        }
-        
-        const context = SillyTavern.getContext?.();
-        if (!context || !context.eventSource || !context.event_types) {
-            setTimeout(initMediaLocalizationInChat, 1000);
-            return;
-        }
-        
-        const { eventSource, event_types } = context;
-        
-        // Listen for character messages being rendered
-        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (messageId) => {
-            try {
-                // Get fresh context each time (characterId may have changed)
-                const currentContext = SillyTavern.getContext();
-                
-                // Get the message element
-                const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-                if (!messageElement) return;
-                
-                // Get current character
-                const charId = currentContext.characterId;
-                if (charId === undefined || charId === null) return;
-                
-                const character = currentContext.characters[charId];
-                if (!character) return;
-                
-                // Apply localization
-                await localizeMediaInMessage(messageElement.querySelector('.mes_text'), character);
-            } catch (e) {
-                console.error('[CharLib] Error in CHARACTER_MESSAGE_RENDERED handler:', e);
-            }
-        });
-        
-        // Also listen for user messages (in case they contain media)
-        eventSource.on(event_types.USER_MESSAGE_RENDERED, async (messageId) => {
-            try {
-                const currentContext = SillyTavern.getContext();
-                
-                const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-                if (!messageElement) return;
-                
-                const charId = currentContext.characterId;
-                if (charId === undefined || charId === null) return;
-                
-                const character = currentContext.characters[charId];
-                if (!character) return;
-                
-                await localizeMediaInMessage(messageElement.querySelector('.mes_text'), character);
-            } catch (e) {
-                console.error('[CharLib] Error in USER_MESSAGE_RENDERED handler:', e);
-            }
-        });
-        
-        // Listen for chat changes to clear cache
-        eventSource.on(event_types.CHAT_CHANGED, () => {
-            // Clear cache when switching chats/characters
-            Object.keys(chatMediaLocalizationCache).forEach(key => delete chatMediaLocalizationCache[key]);
-            
-            // Also localize creator's notes and other character info when chat changes
-            setTimeout(() => localizeCharacterInfoPanels(), 500);
-        });
-        
-        // Listen for message swipes to re-localize the swiped content
-        eventSource.on(event_types.MESSAGE_SWIPED, async (messageId) => {
-            try {
-                const currentContext = SillyTavern.getContext();
-                
-                const charId = currentContext.characterId;
-                if (charId === undefined || charId === null) return;
-                
-                const character = currentContext.characters[charId];
-                if (!character) return;
-                
-                // Function to localize the message
-                const doLocalize = async () => {
-                    // Re-query the element each time as ST may have replaced it
-                    const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-                    if (!messageElement) return;
-                    
-                    const mesText = messageElement.querySelector('.mes_text');
-                    if (mesText) {
-                        await localizeMediaInMessage(mesText, character);
-                    }
-                };
-                
-                // Multiple attempts with increasing delays to catch ST's re-render
-                setTimeout(doLocalize, 50);
-                setTimeout(doLocalize, 150);
-                setTimeout(doLocalize, 300);
-                setTimeout(doLocalize, 600);
-            } catch (e) {
-                console.error('[CharLib] Error in MESSAGE_SWIPED handler:', e);
-            }
-        });
-        
-        // Listen for character selected event to localize info panels
-        if (event_types.CHARACTER_EDITED) {
-            eventSource.on(event_types.CHARACTER_EDITED, () => {
-                setTimeout(() => localizeCharacterInfoPanels(), 300);
+    const fetchChatsForCharacter = async (avatarUrl) => {
+        try {
+            const response = await fetch('/api/characters/chats', {
+                method: 'POST',
+                headers: getContext().getRequestHeaders(),
+                body: JSON.stringify({ avatar_url: avatarUrl, metadata: true })
             });
+            if (response.ok) return Object.values(await response.json());
+        } catch (e) {
+            console.error(`${EXTENSION_NAME}: Error fetching chats for ${avatarUrl}`, e);
         }
-        
-    } catch (e) {
-        console.error('[CharLib] Failed to initialize media localization:', e);
-    }
-}
+        return [];
+    };
 
-/**
- * Localize media in character info panels (creator's notes, description, etc.)
- * These are displayed outside of chat messages in various UI panels
- */
-async function localizeCharacterInfoPanels() {
-    try {
-        const context = SillyTavern.getContext?.();
-        if (!context) return;
+    const loadChats = async () => {
+        const $list = $(`#${IDs.LIST}`);
+        const $pagination = $(`#${IDs.PAGINATION}`);
         
-        const charId = context.characterId;
-        if (charId === undefined || charId === null) return;
+        // Show loading state
+        $list.html('<div class="ct_loader"><i class="fa-solid fa-spinner fa-spin"></i> Loading chats...</div>');
+        $pagination.empty(); // Clear old pagination
+
+        const characters = getContext().characters;
+        let allChats = [];
         
-        const character = context.characters?.[charId];
-        if (!character?.avatar) return;
-        
-        // Check if localization is enabled for this character
-        if (!isMediaLocalizationEnabledForChat(character.avatar)) return;
-        
-        // Build the URL map
-        const urlMap = await buildChatMediaLocalizationMap(character.name, character.avatar);
-        if (Object.keys(urlMap).length === 0) return;
-        
-        // Selectors for ST panels that might contain character info with images
-        const panelSelectors = [
-            '.inline-drawer-content',     // Content drawers (creator notes, etc.)
-            '#description_div',
-            '#creator_notes_div',
-            '#character_popup',
-            '#char_notes',
-            '#firstmessage_div',
-            '.character_description',
-            '.creator_notes',
-            '#mes_example_div',
-            '.mes_narration',
-            '.swipe_right',               // Alternate greetings swipe area
-            '#alternate_greetings',       // Alt greetings container
-            '.alternate_greeting',        // Individual alt greeting
-            '.greeting_text',             // Greeting text content
-        ];
-        
-        for (const selector of panelSelectors) {
-            const panels = document.querySelectorAll(selector);
-            for (const panel of panels) {
-                if (!panel) continue;
-                
-                // Find all remote media in this panel
-                const mediaElements = panel.querySelectorAll(
-                    'img[src^="http"], video source[src^="http"], audio source[src^="http"], video[src^="http"], audio[src^="http"]'
-                );
-                
-                for (const el of mediaElements) {
-                    const src = el.getAttribute('src');
-                    if (!src) continue;
-                    
-                    const localPath = lookupLocalizedMediaForChat(urlMap, src);
-                    if (localPath) {
-                        el.setAttribute('src', localPath);
-                    }
-                }
-            }
+        // Batch fetch
+        const batchSize = 10;
+        for (let i = 0; i < characters.length; i += batchSize) {
+            const batch = characters.slice(i, i + batchSize);
+            const promises = batch.map(async (char) => {
+                const chats = await fetchChatsForCharacter(char.avatar);
+                return chats.map(chat => ({
+                    ...chat,
+                    character_name: char.name,
+                    character_avatar: char.avatar,
+                    date_obj: new Date(chat.last_mes || 0)
+                }));
+            });
+            const results = await Promise.all(promises);
+            results.forEach(r => allChats = allChats.concat(r));
         }
-    } catch (e) {
-        console.error('[CharLib] Error localizing character info panels:', e);
+
+        allChats.sort((a, b) => b.date_obj - a.date_obj);
+        cachedChats = allChats;
+        
+        // Initialize Pagination instead of direct render
+        initializePagination(allChats);
+    };
+
+    const initializePagination = (chats) => {
+        const $container = $(`#${IDs.PAGINATION}`);
+        const $list = $(`#${IDs.LIST}`);
+        
+        if (chats.length === 0) {
+            $list.html('<div class="ct_loader">No chats found.</div>');
+            return;
+        }
+
+        // Use the global jQuery pagination plugin included in SillyTavern
+        $container.pagination({
+            dataSource: chats,
+            pageSize: 50, // Limit to 50 entries per page
+            showPageNumbers: false,
+            showNavigator: true,
+            prevText: '<',
+            nextText: '>',
+            position: 'top',
+            callback: function (data, pagination) {
+                renderChats(data);
+            }
+        });
+    };
+
+    const renderChats = (chats) => {
+        const $list = $(`#${IDs.LIST}`);
+        $list.empty();
+
+        const frag = document.createDocumentFragment();
+
+        chats.forEach(chat => {
+            const card = document.createElement('div');
+            card.className = 'ct_chat_card';
+            
+            const dateStr = chat.date_obj.toLocaleString(undefined, { 
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            });
+            const count = chat.chat_items ?? chat.mes_count ?? '?';
+            const displayName = (chat.file_name || 'Untitled').replace('.jsonl', '');
+
+            card.innerHTML = `
+                <img class="ct_chat_avatar" src="/characters/${encodeURIComponent(chat.character_avatar)}" loading="lazy" alt="${chat.character_name}" />
+                <div class="ct_chat_details">
+                    <div class="ct_chat_filename" title="${displayName}">${displayName}</div>
+                    <div class="ct_chat_meta">
+                        <span class="ct_chat_char_name"><i class="fa-solid fa-user"></i> ${chat.character_name}</span>
+                    </div>
+                    <div class="ct_chat_meta">
+                        <span><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+                        <span><i class="fa-regular fa-comments"></i> ${count}</span>
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', () => openChat(chat));
+            frag.appendChild(card);
+        });
+
+        $list.append(frag);
+    };
+
+    const openChat = async (chatObj) => {
+        const context = getContext();
+        const targetCharId = context.characters.findIndex(c => c.avatar === chatObj.character_avatar);
+        
+        if (targetCharId === -1) {
+            toastr.error('Character not found in library (deleted?).');
+            return;
+        }
+
+        if (context.characterId !== targetCharId) {
+            await context.selectCharacterById(targetCharId);
+        }
+
+        const chatName = chatObj.file_name.replace('.jsonl', '');
+        
+        setTimeout(async () => {
+            if (typeof context.openChat === 'function') {
+                await context.openChat(chatName);
+            } else if (window.openCharacterChat) {
+                await window.openCharacterChat(chatName);
+            } else {
+                 $('#selected_chat_pole').val(chatName).trigger('change');
+            }
+        }, 100);
+    };
+
+    const filterList = () => {
+        const query = $(`#${IDs.SEARCH}`).val().toLowerCase();
+        
+        if (!query) {
+            initializePagination(cachedChats);
+            return;
+        }
+
+        const filtered = cachedChats.filter(chat => {
+            return (
+                (chat.file_name && chat.file_name.toLowerCase().includes(query)) ||
+                (chat.character_name && chat.character_name.toLowerCase().includes(query))
+            );
+        });
+
+        initializePagination(filtered);
+    };
+
+    const injectToggleButton = () => {
+        if (document.getElementById(IDs.TOGGLE_BTN)) return;
+        const $filterContainer = $(`#${IDs.CHAR_BLOCK} .${IDs.TAG_FILTER}`);
+        
+        if ($filterContainer.length) {
+            const toggleBtnHtml = `
+                <span id="${IDs.TOGGLE_BTN}" class="tag actionable clickable-action interactable ${isChatView ? 'ct_active' : ''}" title="Switch to Chat View" tabindex="0" role="button">
+                    <span class="tag_name fa-solid fa-comments"></span>
+                </span>
+            `;
+            $filterContainer.append(toggleBtnHtml);
+            $(`#${IDs.TOGGLE_BTN}`).on('click', toggleView);
+        }
+    };
+
+    const init = () => {
+        const $charBlock = $(`#${IDs.CHAR_BLOCK}`);
+        if ($charBlock.length === 0) return;
+
+        // Inject Chat UI Container with Pagination DIV
+        if (!document.getElementById(IDs.CONTAINER)) {
+            const containerHtml = `
+                <div id="${IDs.CONTAINER}" class="ct_hidden">
+                    <div id="ct_chats_toolbar">
+                        <input id="${IDs.SEARCH}" class="text_pole textarea_compact" type="text" placeholder="Search chats..." autocomplete="off">
+                        <div id="${IDs.REFRESH}" class="menu_button fa-solid fa-sync" title="Refresh List"></div>
+                    </div>
+                    <div id="${IDs.PAGINATION}" class="paginationjs-small"></div>
+                    <div id="${IDs.LIST}"></div>
+                </div>
+            `;
+            $charBlock.append(containerHtml);
+            
+            $(`#${IDs.SEARCH}`).on('input', filterList);
+            $(`#${IDs.REFRESH}`).on('click', loadChats);
+        }
+
+        injectToggleButton();
+
+        const filterContainer = document.querySelector(`#${IDs.CHAR_BLOCK} .${IDs.TAG_FILTER}`);
+        if (filterContainer) {
+            observer = new MutationObserver(() => {
+                if (!document.getElementById(IDs.TOGGLE_BTN)) {
+                    injectToggleButton();
+                }
+            });
+            observer.observe(filterContainer, { childList: true });
+        }
+    };
+
+    const eventSource = window.SillyTavern?.getContext()?.eventSource;
+    if (eventSource) {
+        eventSource.on(window.SillyTavern.getContext().event_types.APP_READY, init);
+    } else {
+        $(document).ready(init);
     }
-}
+})();

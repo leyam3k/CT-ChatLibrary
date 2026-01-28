@@ -1,0 +1,148 @@
+/* Container for the Chat View */
+#ct_chats_container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    width: 100%;
+}
+
+.ct_hidden {
+    display: none !important;
+}
+
+/* Chat List Grid/Flex Layout */
+#ct_chats_list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Toolbar area inside our container */
+#ct_chats_toolbar {
+    padding: 10px;
+    display: flex;
+    gap: 5px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+#ct_chats_search {
+    flex: 1;
+}
+
+/* Pagination Styling */
+#ct_chats_pagination {
+    display: flex;
+    justify-content: center;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Helper class for pagination.js specific styles */
+.paginationjs .paginationjs-pages li {
+    border: 1px solid var(--SmartThemeBorderColor) !important;
+    background-color: var(--SmartThemeBlurTintColor) !important;
+}
+.paginationjs .paginationjs-pages li a {
+    color: var(--SmartThemeBodyColor) !important;
+    background: transparent !important;
+}
+.paginationjs .paginationjs-pages li.active {
+    border-color: var(--SmartThemeAccentColor) !important;
+}
+.paginationjs .paginationjs-pages li.active a {
+    background-color: var(--SmartThemeAccentColor) !important;
+    color: #fff !important;
+}
+.paginationjs .paginationjs-pages li:hover {
+    background-color: var(--SmartThemeHoverColor) !important;
+}
+
+/* Individual Chat Card Styling */
+.ct_chat_card {
+    display: flex;
+    align-items: center;
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+.ct_chat_card:hover {
+    background-color: var(--SmartThemeHoverColor);
+    border-color: var(--SmartThemeAccentColor);
+}
+
+.ct_chat_card.active {
+    border-color: var(--SmartThemeAccentColor);
+    box-shadow: inset 0 0 5px var(--SmartThemeAccentColor);
+}
+
+.ct_chat_avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 15px;
+    flex-shrink: 0;
+    border: 2px solid var(--SmartThemeBorderColor);
+}
+
+.ct_chat_details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ct_chat_filename {
+    font-weight: bold;
+    font-size: 0.95em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--SmartThemeBodyColor);
+}
+
+.ct_chat_meta {
+    font-size: 0.8em;
+    color: var(--SmartThemeBSColor);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.ct_chat_char_name {
+    color: var(--SmartThemeAccentColor);
+    font-weight: 600;
+}
+
+/* Loading Spinner */
+.ct_loader {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: var(--SmartThemeBSColor);
+}
+
+/* Toggle Button Styling */
+#ct_toggle_view_btn {
+    transition: color 0.2s, text-shadow 0.2s;
+}
+
+#ct_toggle_view_btn.ct_active {
+    color: var(--SmartThemeAccentColor);
+    text-shadow: 0 0 5px var(--SmartThemeAccentColor);
+    opacity: 1 !important;
+    filter: none !important;
+}
