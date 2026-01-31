@@ -175,21 +175,39 @@
             return;
         }
 
+        const chatName = chatObj.file_name.replace('.jsonl', '');
+
+        // First, check if we need to switch characters
         if (context.characterId !== targetCharId) {
             await context.selectCharacterById(targetCharId);
+            
+            // Wait for character to be fully loaded
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        const chatName = chatObj.file_name.replace('.jsonl', '');
-        
-        setTimeout(async () => {
-            if (typeof context.openChat === 'function') {
-                await context.openChat(chatName);
-            } else if (window.openCharacterChat) {
-                await window.openCharacterChat(chatName);
+        // Now open the specific chat using SillyTavern's API
+        try {
+            // Try using the openCharacterChat function from SillyTavern's global context
+            const { openCharacterChat } = SillyTavern.getContext();
+            
+            if (typeof openCharacterChat === 'function') {
+                // This is the correct way to open a chat in SillyTavern
+                await openCharacterChat(chatName);
             } else {
-                 $('#selected_chat_pole').val(chatName).trigger('change');
+                // Fallback: Try the select element method
+                const selectElement = document.getElementById('select_chat_pole');
+                if (selectElement) {
+                    selectElement.value = chatName;
+                    selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    // Last resort: Try the jQuery approach
+                    $('#select_chat_pole').val(chatName).trigger('change');
+                }
             }
-        }, 100);
+        } catch (error) {
+            console.error(`${EXTENSION_NAME}: Error opening chat`, error);
+            toastr.error('Failed to open chat. Please try again.');
+        }
     };
 
     const filterList = () => {
