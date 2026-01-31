@@ -20,6 +20,7 @@
     let isChatView = false;
     let cachedChats = [];
     let observer = null;
+    let resizeTimeout = null;
     
     const getContext = () => window.SillyTavern.getContext();
 
@@ -104,10 +105,17 @@
             return;
         }
 
+        // Calculate optimal page size based on viewport (consistently two columns)
+        const getPageSize = () => {
+            const viewportWidth = window.innerWidth;
+            if (viewportWidth < 768) return 20;      // Mobile: single column
+            return 40;                               // Desktop: two columns
+        };
+
         // Use the global jQuery pagination plugin included in SillyTavern
         $container.pagination({
             dataSource: chats,
-            pageSize: 50, // Limit to 50 entries per page
+            pageSize: getPageSize(),
             showPageNumbers: false,
             showNavigator: true,
             prevText: '<',
@@ -140,11 +148,13 @@
                 <div class="ct_chat_details">
                     <div class="ct_chat_filename" title="${displayName}">${displayName}</div>
                     <div class="ct_chat_meta">
-                        <span class="ct_chat_char_name"><i class="fa-solid fa-user"></i> ${chat.character_name}</span>
+                        <span class="ct_chat_char_name" title="${chat.character_name}">
+                            <i class="fa-solid fa-user"></i> ${chat.character_name.length > 15 ? chat.character_name.substring(0, 15) + '...' : chat.character_name}
+                        </span>
                     </div>
                     <div class="ct_chat_meta">
-                        <span><i class="fa-regular fa-clock"></i> ${dateStr}</span>
-                        <span><i class="fa-regular fa-comments"></i> ${count}</span>
+                        <span title="Last modified"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+                        <span title="Message count"><i class="fa-regular fa-comments"></i> ${count}</span>
                     </div>
                 </div>
             `;
@@ -248,6 +258,16 @@
             });
             observer.observe(filterContainer, { childList: true });
         }
+
+        // Add resize handler to update pagination on viewport changes
+        $(window).on('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (isChatView && cachedChats.length > 0) {
+                    initializePagination(cachedChats);
+                }
+            }, 250);
+        });
     };
 
     const eventSource = window.SillyTavern?.getContext()?.eventSource;
